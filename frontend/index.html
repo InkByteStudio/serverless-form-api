@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contact Us</title>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 480px;
+      margin: 3rem auto;
+      padding: 0 1rem;
+      color: #1a1a1a;
+      line-height: 1.6;
+    }
+
+    h1 {
+      margin-bottom: 1.5rem;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 0.25rem;
+      font-weight: 500;
+    }
+
+    input,
+    textarea {
+      width: 100%;
+      padding: 0.5rem;
+      margin-bottom: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font: inherit;
+    }
+
+    button {
+      padding: 0.6rem 1.5rem;
+      background: #111;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    #success {
+      color: #166534;
+    }
+
+    #error {
+      color: #991b1b;
+    }
+  </style>
+</head>
+<body>
+  <h1>Contact Us</h1>
+
+  <form id="contact-form" class="contact-form">
+    <!-- Honeypot field — hidden from real users, bots will fill it -->
+    <div style="position: absolute; opacity: 0; z-index: -1;" aria-hidden="true">
+      <label for="website">Website</label>
+      <input type="text" id="website" name="website" autocomplete="off" tabindex="-1" />
+    </div>
+
+    <div>
+      <label for="name">Name</label>
+      <input type="text" id="name" required maxlength="100" />
+    </div>
+
+    <div>
+      <label for="email">Email</label>
+      <input type="email" id="email" required maxlength="254" />
+    </div>
+
+    <div>
+      <label for="message">Message</label>
+      <textarea id="message" required rows="5" maxlength="2000"></textarea>
+    </div>
+
+    <button type="submit" id="submit-btn">Send Message</button>
+  </form>
+
+  <div id="success" style="display: none;">
+    <p>Message sent! We'll get back to you soon.</p>
+  </div>
+
+  <div id="error" style="display: none;">
+    <p>Something went wrong. Please try again.</p>
+  </div>
+
+  <script src="contact.js"></script>
+</body>
+</html>

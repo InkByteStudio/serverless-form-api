@@ -1,0 +1,260 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless form submission API with multi-site support
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Timeout: 30
+    MemorySize: 256
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref SubmissionsTable
+        SUPPRESSION_TABLE: !Ref SuppressionTable
+        ALLOWED_ORIGINS: !Ref AllowedOrigins
+        NOTIFY_EMAIL: !Ref NotifyEmail
+        SES_FROM_EMAIL: !Ref SesFromEmail
+
+Parameters:
+  AllowedOrigins:
+    Type: String
+    Default: "http://localhost:4321,http://localhost:8080"
+    Description: Comma-separated list of allowed CORS origins
+
+  NotifyEmail:
+    Type: String
+    Default: "admin@example.com"
+    Description: Email address to receive form submission notifications
+
+  SesFromEmail:
+    Type: String
+    Default: "noreply@example.com"
+    Description: Verified SES sender email address
+
+Resources:
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+      CorsConfiguration:
+        AllowOrigins: !Split [",", !Ref AllowedOrigins]
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - x-api-key
+        MaxAge: 86400
+
+  SubmitFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers/submit.handler
+      CodeUri: dist/
+      Events:
+        PostSubmission:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /submissions
+            Method: POST
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SubmissionsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref SuppressionTable
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: ses:SendEmail
+              Resource:
+                - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
+
+  SubmissionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  SuppressionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+
+  BounceTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: ses-bounces
+
+  ComplaintTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: ses-complaints
+
+  BounceHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers/bounceHandler.handler
+      CodeUri: dist/
+      Events:
+        BounceEvent:
+          Type: SNS
+          Properties:
+            Topic: !Ref BounceTopic
+        ComplaintEvent:
+          Type: SNS
+          Properties:
+            Topic: !Ref ComplaintTopic
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SuppressionTable
+
+  SubmitFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${SubmitFunction}"
+      RetentionInDays: 30
+
+  BounceHandlerFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${BounceHandlerFunction}"
+      RetentionInDays: 30
+
+  SubmitErrorsMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref SubmitFunctionLogGroup
+      FilterPattern: '{ $.level = "ERROR" }'
+      MetricTransformations:
+        - MetricName: SubmitErrors
+          MetricNamespace: FormApi
+          MetricValue: "1"
+          DefaultValue: 0
+
+  RateLimitMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref SubmitFunctionLogGroup
+      FilterPattern: '{ $.event = "rate_limit_hit" }'
+      MetricTransformations:
+        - MetricName: RateLimitHits
+          MetricNamespace: FormApi
+          MetricValue: "1"
+          DefaultValue: 0
+
+  SubmissionsCreatedMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref SubmitFunctionLogGroup
+      FilterPattern: '{ $.event = "submission_created" }'
+      MetricTransformations:
+        - MetricName: SubmissionsCreated
+          MetricNamespace: FormApi
+          MetricValue: "1"
+          DefaultValue: 0
+
+  BounceMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref BounceHandlerFunctionLogGroup
+      FilterPattern: '{ $.event = "bounce_processed" }'
+      MetricTransformations:
+        - MetricName: BouncesProcessed
+          MetricNamespace: FormApi
+          MetricValue: "1"
+          DefaultValue: 0
+
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: form-api-alarms
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotifyEmail
+
+  HighErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: FormApi-HighErrorRate
+      AlarmDescription: "More than 10 errors in 5 minutes"
+      Namespace: FormApi
+      MetricName: SubmitErrors
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
+
+  HighBounceRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: FormApi-HighBounceRate
+      AlarmDescription: "More than 5 bounces in 1 hour"
+      Namespace: FormApi
+      MetricName: BouncesProcessed
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
+
+  RateLimitAbuseAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: FormApi-RateLimitAbuse
+      AlarmDescription: "More than 20 rate limit hits in 5 minutes"
+      Namespace: FormApi
+      MetricName: RateLimitHits
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 20
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+
+  TableName:
+    Description: DynamoDB submissions table name
+    Value: !Ref SubmissionsTable
+
+  BounceTopicArn:
+    Description: SNS topic ARN for SES bounces
+    Value: !Ref BounceTopic
+
+  ComplaintTopicArn:
+    Description: SNS topic ARN for SES complaints
+    Value: !Ref ComplaintTopic

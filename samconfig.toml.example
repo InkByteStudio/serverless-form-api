@@ -1,0 +1,11 @@
+# Copy this file to samconfig.toml and fill in your values.
+
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "serverless-form-api"
+resolve_s3 = true
+s3_prefix = "serverless-form-api"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "AllowedOrigins=\"https://yourdomain.com\" NotifyEmail=\"admin@yourdomain.com\" SesFromEmail=\"noreply@yourdomain.com\""
