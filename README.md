@@ -238,7 +238,7 @@ For ~1,000 submissions/month: **~$0.50/month**
 
 This repo is the companion code for the full step-by-step tutorial:
 
-**[Deploy a Serverless Contact Form with AWS SAM, Lambda & DynamoDB](https://inkbytestudio.com/tutorials/deploy-serverless-contact-form-aws-sam-lambda-dynamodb)**
+**[Deploy a Serverless Contact Form with AWS SAM, Lambda & DynamoDB](https://igotasite4that.com/tutorials/deploy-serverless-contact-form-aws-sam-lambda-dynamodb)**
 
 ## License
 
