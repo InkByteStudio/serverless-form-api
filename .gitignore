@@ -4,3 +4,5 @@ dist/
 samconfig.toml
 .env
 *.js.map
+
+.claude/
